@@ -1,0 +1,12 @@
+# Código de terceiros baixado/compilado localmente (o workflow baixa a versão fixa)
+/third_party/
+phone-engine/bin/
+*.o
+*.log
+# Segredos e configuração local: nunca versionar
+.env
+.env.*
+*.pem
+*.key
+*.sip.json
+node_modules/
