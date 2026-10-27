@@ -53,10 +53,14 @@ jobs:
             -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143 `
             -p:WindowsTargetPlatformVersion=10.0
 
+      - name: Ambiente do compilador MSVC (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Compilar o motor
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           mkdir out
           set PJ=%CD%\pjproject
           cl /nologo /std:c++17 /EHsc /O2 /MT /utf-8 /DPJ_WIN32=1 /DPJ_M_X86_64=1 ^
