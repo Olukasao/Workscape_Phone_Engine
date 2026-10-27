@@ -50,6 +50,16 @@ std::string scrub(std::string text, const std::string &secret) {
 
 class EngineCall;
 
+// O log do PJSIP vai só para stderr: stdout é reservado ao protocolo JSON (uma mensagem por linha).
+class StderrLogWriter : public LogWriter {
+public:
+    void write(const LogEntry &entry) override {
+        std::fputs(entry.msg.c_str(), stderr);
+        std::fputc('\n', stderr);
+    }
+};
+StderrLogWriter g_log_writer;
+
 // Toca um arquivo WAV dentro da chamada e avisa quando termina.
 class EnginePlayer : public AudioMediaPlayer {
 public:
@@ -232,7 +242,8 @@ void cmd_init(const json &m) {
     cfg.uaConfig.userAgent = str(m, "userAgent", std::string("WorkscapePhone/") + kVersion);
     cfg.uaConfig.maxCalls = 8;
     cfg.logConfig.level = num(m, "logLevel", 3);
-    cfg.logConfig.consoleLevel = num(m, "logLevel", 3);
+    cfg.logConfig.consoleLevel = 0;  // nada no console (stdout): o log passa pelo writer, em stderr
+    cfg.logConfig.writer = &g_log_writer;
     cfg.logConfig.msgLogging = 0;  // não imprimir mensagens SIP completas (têm cabeçalhos de autenticação)
     cfg.medConfig.ecTailLen = num(m, "echoTailMs", 200);
     cfg.medConfig.noVad = !flag(m, "vad", false);
