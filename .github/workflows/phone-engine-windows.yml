@@ -67,11 +67,12 @@ jobs:
             /I"%PJ%\pjlib\include" /I"%PJ%\pjlib-util\include" /I"%PJ%\pjnath\include" ^
             /I"%PJ%\pjmedia\include" /I"%PJ%\pjsip\include" ^
             phone-engine\src\main.cpp /Fe:out\workscape-phone-engine.exe /Fo:out\ ^
-            /link /LIBPATH:"%PJ%\lib" /LIBPATH:"%PJ%\third_party\lib" ^
+            /link /LIBPATH:"%PJ%\pjlib\lib" /LIBPATH:"%PJ%\pjlib-util\lib" /LIBPATH:"%PJ%\pjnath\lib" ^
+            /LIBPATH:"%PJ%\pjmedia\lib" /LIBPATH:"%PJ%\pjsip\lib" /LIBPATH:"%PJ%\third_party\lib" ^
             pjsua2-lib-x86_64-x64-vc14-Release-Static.lib pjsua-lib-x86_64-x64-vc14-Release-Static.lib ^
             pjsip-ua-x86_64-x64-vc14-Release-Static.lib pjsip-simple-x86_64-x64-vc14-Release-Static.lib ^
             pjsip-core-x86_64-x64-vc14-Release-Static.lib pjmedia-codec-x86_64-x64-vc14-Release-Static.lib ^
-            pjmedia-audiodev-x86_64-x64-vc14-Release-Static.lib pjmedia-x86_64-x64-vc14-Release-Static.lib ^
+            pjmedia-audiodev-x86_64-x64-vc14-Release-Static.lib pjmedia-videodev-x86_64-x64-vc14-Release-Static.lib pjmedia-x86_64-x64-vc14-Release-Static.lib ^
             pjnath-x86_64-x64-vc14-Release-Static.lib pjlib-util-x86_64-x64-vc14-Release-Static.lib ^
             pjlib-x86_64-x64-vc14-Release-Static.lib libsrtp-x86_64-x64-vc14-Release-Static.lib ^
             libresample-x86_64-x64-vc14-Release-Static.lib libgsmcodec-x86_64-x64-vc14-Release-Static.lib ^
