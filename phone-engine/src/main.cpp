@@ -76,6 +76,7 @@ struct Engine {
     std::string domain;  // domínio da conta; destinos de chamada e transferência sempre usam este
     bool nullAudio = false;
     bool started = false;
+    std::atomic<bool> dnd{false};  // Não perturbe: chamadas recebidas levam 486 Ocupado na hora, sem tocar
 };
 
 Engine g;
@@ -191,6 +192,17 @@ public:
         sweep_calls();
         auto call = std::make_unique<EngineCall>(*this, iprm.callId);
         CallInfo ci = call->getInfo();
+        if (g.dnd.load()) {
+            // Não perturbe: nada de "180 Ringing". A central recebe "486 Busy Here" já na primeira resposta, então
+            // quem ligou ouve ocupado e o telefone nem chega a tocar. O objeto fica em g.calls até a chamada encerrar.
+            CallOpParam ocupado;
+            ocupado.statusCode = PJSIP_SC_BUSY_HERE;
+            call->answer(ocupado);
+            emit({{"event", "incoming_blocked"}, {"id", ci.id}, {"remote", ci.remoteUri}});
+            std::lock_guard<std::mutex> lock(g.calls_mutex);
+            g.calls.push_back(std::move(call));
+            return;
+        }
         // Toca "180 Ringing" logo para a central saber que o telefone está avisando a pessoa.
         CallOpParam ringing;
         ringing.statusCode = PJSIP_SC_RINGING;
@@ -378,6 +390,7 @@ void dispatch(const json &m) {
             c.playFile(f);
             emit({{"event", "play_started"}, {"id", c.getId()}});
         });
+        else if (cmd == "dnd") { g.dnd.store(flag(m, "on", false)); emit({{"event", "dnd"}, {"on", g.dnd.load()}}); }
         else if (cmd == "devices") cmd_devices();
         else if (cmd == "set_devices") {
             if (!g.started) return emit_error("set_devices", "Envie 'init' antes.");
