@@ -390,6 +390,7 @@ int main() {
     emit({{"event", "hello"}, {"version", kVersion}});
     std::string line;
     while (std::getline(std::cin, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();  // Windows entrega \r\n
         if (line.empty()) continue;
         json m = json::parse(line, nullptr, false);
         if (m.is_discarded() || !m.is_object()) { emit_error("", "JSON inválido."); continue; }
