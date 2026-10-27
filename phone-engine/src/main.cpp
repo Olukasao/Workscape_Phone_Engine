@@ -325,6 +325,7 @@ void with_call(const json &m, const char *cmd, const std::function<void(EngineCa
 }
 
 void cmd_devices() {
+    if (!g.started) return emit_error("devices", "Envie 'init' antes de listar os dispositivos de áudio.");
     json out = {{"event", "devices"}, {"capture", json::array()}, {"playback", json::array()}};
     AudioDevInfoVector2 list = g.ep.audDevManager().enumDev2();
     for (size_t i = 0; i < list.size(); ++i) {
@@ -368,6 +369,7 @@ void dispatch(const json &m) {
         });
         else if (cmd == "devices") cmd_devices();
         else if (cmd == "set_devices") {
+            if (!g.started) return emit_error("set_devices", "Envie 'init' antes.");
             AudDevManager &mgr = g.ep.audDevManager();
             if (m.contains("capture") && m["capture"].is_number()) mgr.setCaptureDev(m["capture"].get<int>());
             if (m.contains("playback") && m["playback"].is_number()) mgr.setPlaybackDev(m["playback"].get<int>());
