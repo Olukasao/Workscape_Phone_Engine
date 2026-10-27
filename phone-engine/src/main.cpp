@@ -9,6 +9,7 @@
 #include <pjsua2.hpp>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <functional>
@@ -16,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../third_party/json.hpp"
@@ -58,7 +60,6 @@ public:
         std::fputc('\n', stderr);
     }
 };
-StderrLogWriter g_log_writer;
 
 // Toca um arquivo WAV dentro da chamada e avisa quando termina.
 class EnginePlayer : public AudioMediaPlayer {
@@ -177,6 +178,37 @@ void sweep_calls() {
     }
 }
 
+// Níveis de áudio (0 a 255) a cada 100 ms enquanto há uma conversa: "mic" é o que sai do seu microfone e "remoto" é a voz
+// de quem está do outro lado. A interface usa para o medidor de microfone. Só emite durante chamada confirmada.
+std::atomic<bool> g_niveis_ativo{false};
+std::thread g_niveis_thread;
+
+void laco_niveis() {
+    try { Endpoint::instance().libRegisterThread("niveis"); } catch (Error &) { return; }
+    while (g_niveis_ativo.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        try {
+            int remoto = -1;
+            {
+                std::lock_guard<std::mutex> lock(g.calls_mutex);
+                for (auto &c : g.calls) {
+                    if (!c || !c->isActive()) continue;
+                    CallInfo ci = c->getInfo();
+                    if (ci.state != PJSIP_INV_STATE_CONFIRMED) continue;
+                    for (unsigned i = 0; i < ci.media.size(); ++i) {
+                        if (ci.media[i].type != PJMEDIA_TYPE_AUDIO || ci.media[i].status != PJSUA_CALL_MEDIA_ACTIVE) continue;
+                        auto *am = dynamic_cast<AudioMedia *>(c->getMedia(i));
+                        if (am) remoto = std::max(remoto, (int)am->getRxLevel());
+                    }
+                }
+            }
+            if (remoto < 0) continue;  // sem conversa: nada a medir
+            int mic = (int)Endpoint::instance().audDevManager().getCaptureDevMedia().getRxLevel();
+            emit({{"event", "levels"}, {"mic", mic}, {"remoto", remoto}});
+        } catch (Error &) { /* chamada encerrando: tenta de novo no próximo ciclo */ }
+    }
+}
+
 class EngineAccount : public Account {
 public:
     void onRegState(OnRegStateParam &prm) override {
@@ -255,7 +287,8 @@ void cmd_init(const json &m) {
     cfg.uaConfig.maxCalls = 8;
     cfg.logConfig.level = num(m, "logLevel", 3);
     cfg.logConfig.consoleLevel = 0;  // nada no console (stdout): o log passa pelo writer, em stderr
-    cfg.logConfig.writer = &g_log_writer;
+    // O PJSUA2 passa a ser dono do writer e o apaga em libDestroy: precisa estar no heap (um objeto estático derrubava o encerramento).
+    cfg.logConfig.writer = new StderrLogWriter();
     cfg.logConfig.msgLogging = 0;  // não imprimir mensagens SIP completas (têm cabeçalhos de autenticação)
     cfg.medConfig.ecTailLen = num(m, "echoTailMs", 200);
     cfg.medConfig.noVad = !flag(m, "vad", false);
@@ -285,6 +318,8 @@ void cmd_init(const json &m) {
         try { g.ep.codecSetPriority(c, (pj_uint8_t)prio--); } catch (Error &) { /* codec ausente neste build */ }
     }
     g.started = true;
+    g_niveis_ativo = true;
+    g_niveis_thread = std::thread(laco_niveis);
     json ev = {{"event", "ready"}, {"version", kVersion}, {"pjsip", pj_get_version()}, {"transport", transport}, {"nullAudio", g.nullAudio}};
     emit(ev);
 }
@@ -423,13 +458,16 @@ int main() {
         if (str(m, "cmd") == "quit") break;
         dispatch(m);
     }
-    // Encerramento limpo: cancela o registro e destrói a biblioteca.
-    try {
-        if (g.account) { g.account->setRegistration(false); pj_thread_sleep(300); }
-        g.calls.clear();
-        g.account.reset();
-        if (g.started) g.ep.libDestroy();
-    } catch (...) {}
+    // Encerramento limpo. Cada passo é isolado: um erro em um deles não pode pular o seguinte (principalmente a thread de níveis,
+    // que precisa ser encerrada antes de o programa sair).
+    g_niveis_ativo = false;
+    if (g_niveis_thread.joinable()) g_niveis_thread.join();
+    // Desliga o que estiver em andamento antes de destruir os objetos: apagar uma chamada ainda ativa derrubava o encerramento.
+    try { if (g.started) { g.ep.hangupAllCalls(); pj_thread_sleep(300); } } catch (...) {}
+    try { if (g.account) { g.account->setRegistration(false); pj_thread_sleep(300); } } catch (...) {}
+    try { std::lock_guard<std::mutex> lock(g.calls_mutex); g.calls.clear(); } catch (...) {}
+    try { g.account.reset(); } catch (...) {}
+    try { if (g.started) g.ep.libDestroy(); } catch (...) {}
     emit({{"event", "bye"}});
     return 0;
 }
