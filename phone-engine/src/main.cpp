@@ -77,6 +77,7 @@ struct Engine {
     std::string domain;  // domínio da conta; destinos de chamada e transferência sempre usam este
     bool nullAudio = false;
     bool started = false;
+    std::string recDir;  // pasta das gravações; vazio = não grava (o Workspace só liga depois de o administrador permitir)
     std::atomic<bool> dnd{false};  // Não perturbe: chamadas recebidas levam 486 Ocupado na hora, sem tocar
 };
 
@@ -100,6 +101,36 @@ public:
     EngineCall(Account &acc, int id = PJSUA_INVALID_ID) : Call(acc, id) {}
     bool muted = false;
     std::unique_ptr<EnginePlayer> player;
+    // Gravação em dois arquivos mono: o que sai do microfone (atendente) e o que chega da central (cliente).
+    // Separados, a transcrição já sabe quem falou. Só existem quando o Workspace pediu ("rec_dir") e a conversa começou.
+    std::unique_ptr<AudioMediaRecorder> recLocal, recRemoto;
+    std::string recLocalPath, recRemotoPath;
+
+    void pararGravacao() {
+        if (!recLocal && !recRemoto) return;
+        try { recLocal.reset(); recRemoto.reset(); } catch (...) {}  // destruir fecha e grava o cabeçalho do WAV
+        emit({{"event", "recording_saved"}, {"id", getId()}, {"local", recLocalPath}, {"remote", recRemotoPath}});
+        recLocalPath.clear();
+        recRemotoPath.clear();
+    }
+
+    void iniciarGravacao(AudioMedia &remoto) {
+        if (g.recDir.empty() || recLocal) return;
+        std::string base = g.recDir + "/chamada-" + std::to_string(getId()) + "-" + std::to_string((long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        try {
+            recLocalPath = base + "-local.wav";
+            recRemotoPath = base + "-remoto.wav";
+            recLocal.reset(new AudioMediaRecorder());
+            recLocal->createRecorder(recLocalPath);
+            recRemoto.reset(new AudioMediaRecorder());
+            recRemoto->createRecorder(recRemotoPath);
+            Endpoint::instance().audDevManager().getCaptureDevMedia().startTransmit(*recLocal);
+            remoto.startTransmit(*recRemoto);
+        } catch (Error &e) {
+            recLocal.reset(); recRemoto.reset(); recLocalPath.clear(); recRemotoPath.clear();
+            emit_error("record", e.reason, e.status);
+        }
+    }
 
     void onCallState(OnCallStateParam &) override {
         CallInfo ci = getInfo();
@@ -113,6 +144,7 @@ public:
                    {"direction", ci.role == PJSIP_ROLE_UAC ? "out" : "in"},
                    {"durationSec", (int)ci.connectDuration.sec}};
         emit(ev);
+        if (ci.state == PJSIP_INV_STATE_DISCONNECTED) pararGravacao();  // antes do "call_ended": o Workspace envia o arquivo ao ver esse evento
         if (ci.state == PJSIP_INV_STATE_DISCONNECTED) emit({{"event", "call_ended"}, {"id", ci.id}, {"status", (int)ci.lastStatusCode}, {"reason", ci.lastReason}});
     }
 
@@ -129,6 +161,7 @@ public:
                 AudDevManager &mgr = Endpoint::instance().audDevManager();
                 if (!muted) mgr.getCaptureDevMedia().startTransmit(*am);
                 am->startTransmit(mgr.getPlaybackDevMedia());
+                iniciarGravacao(*am);
             }
         }
         emit({{"event", "media"}, {"id", ci.id}, {"audioActive", active}});
@@ -425,6 +458,13 @@ void dispatch(const json &m) {
             c.playFile(f);
             emit({{"event", "play_started"}, {"id", c.getId()}});
         });
+        else if (cmd == "rec_dir") {
+            // Pasta onde gravar as conversas; texto vazio desliga. Só vale para as próximas chamadas. Sem '..' no caminho.
+            std::string d = str(m, "dir");
+            if (d.find("..") != std::string::npos) return emit_error("rec_dir", "Caminho inválido.");
+            g.recDir = d;
+            emit({{"event", "rec_dir"}, {"on", !d.empty()}});
+        }
         else if (cmd == "dnd") { g.dnd.store(flag(m, "on", false)); emit({{"event", "dnd"}, {"on", g.dnd.load()}}); }
         else if (cmd == "devices") cmd_devices();
         else if (cmd == "set_devices") {
