@@ -231,7 +231,7 @@ void laco_niveis() {
                     for (unsigned i = 0; i < ci.media.size(); ++i) {
                         if (ci.media[i].type != PJMEDIA_TYPE_AUDIO || ci.media[i].status != PJSUA_CALL_MEDIA_ACTIVE) continue;
                         auto *am = dynamic_cast<AudioMedia *>(c->getMedia(i));
-                        if (am) remoto = std::max(remoto, (int)am->getRxLevel());
+                        if (am) remoto = (std::max)(remoto, (int)am->getRxLevel());
                     }
                 }
             }

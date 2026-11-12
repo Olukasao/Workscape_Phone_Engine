@@ -65,7 +65,7 @@ jobs:
         run: |
           mkdir out
           set PJ=%CD%\pjproject
-          cl /nologo /std:c++17 /EHsc /O2 /MT /utf-8 /DPJ_WIN32=1 /DPJ_M_X86_64=1 ^
+          cl /nologo /std:c++17 /EHsc /O2 /MT /utf-8 /DPJ_WIN32=1 /DPJ_M_X86_64=1 /DNOMINMAX ^
             /I"%PJ%\pjlib\include" /I"%PJ%\pjlib-util\include" /I"%PJ%\pjnath\include" ^
             /I"%PJ%\pjmedia\include" /I"%PJ%\pjsip\include" ^
             phone-engine\src\main.cpp /Fe:out\workscape-phone-engine.exe /Fo:out\ ^
